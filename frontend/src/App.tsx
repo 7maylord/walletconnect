@@ -1,18 +1,30 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import WalletConnect from "./components/WalletConnect";
 import ChainSwitch from "./components/ChainSwitch";
+import { LOCAL_STORAGE_KEYS } from "./config";
 import "./App.css";
 
 function App() {
   const [provider, setProvider] = useState<any>(null);
   const [currentChain, setCurrentChain] = useState<number | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Effect to check if user was previously connected
+  useEffect(() => {
+    const previouslyConnectedRDNS = localStorage.getItem(
+      LOCAL_STORAGE_KEYS.PREVIOUSLY_CONNECTED_PROVIDER_RDNS
+    );
+    console.log("Previously connected provider:", previouslyConnectedRDNS);
+    // We'll set isInitialized to true to signal that we've checked for previous connections
+    setIsInitialized(true);
+  }, []);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
       <div className="w-full max-w-4xl bg-gray-800 p-6 rounded-lg shadow-lg">
         {/* Title */}
-        <h1 className="text-3xl font-bold text-center mb-6">EIP-6963 Wallet Selector</h1>
+        <h1 className="text-3xl font-bold text-center mb-6">EIP-6963 Wallet Connect</h1>
 
         <div className="flex">
           {/* Sidebar: Wallet List */}
@@ -21,7 +33,8 @@ function App() {
             <WalletConnect 
               setProvider={setProvider} 
               setCurrentChain={setCurrentChain} 
-              setWalletAddress={setWalletAddress} 
+              setWalletAddress={setWalletAddress}
+              isInitialized={isInitialized}
             />
           </aside>
 

@@ -1,18 +1,25 @@
-import { useEffect, useState, useCallback } from "react";
-import { LOCAL_STORAGE_KEYS, networkInfoMap, isSupportedChain } from "../config/index";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { LOCAL_STORAGE_KEYS, EIP6963EventNames } from "../config/index";
 import { truncateAddress } from "../utils/helpers";
 
 interface WalletConnectProps {
   setProvider: React.Dispatch<any>;
   setCurrentChain: React.Dispatch<React.SetStateAction<number | null>>;
   setWalletAddress: React.Dispatch<React.SetStateAction<string | null>>;
+  isInitialized: boolean;
 }
 
-const WalletConnect: React.FC<WalletConnectProps> = ({ setProvider, setCurrentChain, setWalletAddress }) => {
+const WalletConnect: React.FC<WalletConnectProps> = ({ 
+  setProvider, 
+  setCurrentChain, 
+  setWalletAddress,
+  isInitialized 
+}) => {
   const [wallets, setWallets] = useState<EIP6963ProviderDetail[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<EIP1193Provider | null>(null);
-  const [isUnsupported, setIsUnsupported] = useState(false);
+  const providerRef = useRef<EIP1193Provider | null>(null);
+  const [, setReconnectAttempted] = useState(false);
 
+  // Handle provider announcements
   const handleProviderAnnounce = useCallback((event: any) => {
     setWallets((prev) => {
       const walletMap = new Map(prev.map((wallet) => [wallet.info.uuid, wallet]));
@@ -23,62 +30,107 @@ const WalletConnect: React.FC<WalletConnectProps> = ({ setProvider, setCurrentCh
     });
   }, []);
 
+  // Set up event listeners for wallet announcements
   useEffect(() => {
-    window.addEventListener("eip6963:announceProvider", handleProviderAnnounce as unknown as EventListener);
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    window.addEventListener(EIP6963EventNames.Announce, handleProviderAnnounce as unknown as EventListener);
+    window.dispatchEvent(new Event(EIP6963EventNames.Request));
 
     return () => {
-      window.removeEventListener("eip6963:announceProvider", handleProviderAnnounce as unknown as EventListener);
+      window.removeEventListener(EIP6963EventNames.Announce, handleProviderAnnounce as unknown as EventListener);
     };
   }, [handleProviderAnnounce]);
+
+  // Attempt to reconnect with previously used wallet
+  useEffect(() => {
+    const reconnectToPreviousWallet = async () => {
+      if (!isInitialized) return;
+      
+      const prevProviderRDNS = localStorage.getItem(LOCAL_STORAGE_KEYS.PREVIOUSLY_CONNECTED_PROVIDER_RDNS);
+      if (!prevProviderRDNS || wallets.length === 0) return;
+
+      // Find the previously connected wallet
+      const matchingWallet = wallets.find(wallet => wallet.info.rdns === prevProviderRDNS);
+      if (matchingWallet) {
+        try {
+          await connectWallet(matchingWallet);
+        } catch (error) {
+          console.error("Failed to reconnect to previous wallet:", error);
+          localStorage.removeItem(LOCAL_STORAGE_KEYS.PREVIOUSLY_CONNECTED_PROVIDER_RDNS);
+        }
+      }
+      
+      setReconnectAttempted(true);
+    };
+
+    reconnectToPreviousWallet();
+  }, [wallets, isInitialized]);
+
+  // Set up and clean up event listeners for the connected provider
+  useEffect(() => {
+    const provider = providerRef.current;
+    if (!provider) return;
+
+    const chainChangedHandler = (chainId: string) => handleChainChanged(chainId, provider);
+    const accountsChangedHandler = handleAccountsChanged;
+
+    provider.on?.("chainChanged", chainChangedHandler);
+    provider.on?.("accountsChanged", accountsChangedHandler);
+
+    return () => {
+      provider.removeListener?.("chainChanged", chainChangedHandler);
+      provider.removeListener?.("accountsChanged", accountsChangedHandler);
+    };
+  }, [providerRef.current]);
 
   const connectWallet = async (providerDetail: EIP6963ProviderDetail) => {
     try {
       const accounts = (await providerDetail.provider.request({ method: "eth_requestAccounts" })) as string[];
+      const chainIdHex = await providerDetail.provider.request({ method: "eth_chainId" }) as string;
+      const chainId = parseInt(chainIdHex, 16);
 
-      setSelectedProvider(providerDetail.provider);
+      // Set the provider ref for event listeners
+      providerRef.current = providerDetail.provider;
+      
+      // Update state
       setProvider(providerDetail.provider);
       setWalletAddress(truncateAddress(accounts[0]));
+      setCurrentChain(chainId);
+      
+      // Save connection information
       localStorage.setItem(LOCAL_STORAGE_KEYS.PREVIOUSLY_CONNECTED_PROVIDER_RDNS, providerDetail.info.rdns);
-      listenForEvents(providerDetail.provider);
+      
+      return true;
     } catch (error) {
       console.error("Failed to connect provider:", error);
+      return false;
     }
   };
 
-  const listenForEvents = (provider: EIP1193Provider) => {
-    provider.removeListener?.("chainChanged", handleChainChanged);
-    provider.removeListener?.("accountsChanged", handleAccountsChanged);
-
-    provider.on?.("chainChanged", handleChainChanged);
-    provider.on?.("accountsChanged", handleAccountsChanged);
-  };
-
-  const handleChainChanged = async (chainId: string) => {
-    const numericChainId = parseInt(chainId, 16);
-    setCurrentChain(numericChainId);
-    setIsUnsupported(!isSupportedChain(numericChainId));
-
-    if (!isSupportedChain(numericChainId)) return;
-
-    try {
-      await selectedProvider?.request({
-        method: "wallet_addEthereumChain",
-        params: [networkInfoMap[numericChainId]],
-      });
-    } catch (error) {
-      console.error("User rejected adding network:", error);
-    }
+  const handleChainChanged = async (chainIdHex: string, _provider: EIP1193Provider) => {
+    const chainId = parseInt(chainIdHex, 16);
+    setCurrentChain(chainId);
   };
 
   const handleAccountsChanged = (accounts: string[]) => {
     if (accounts.length === 0) {
+      // Disconnect wallet
       setProvider(null);
       setWalletAddress(null);
       setCurrentChain(null);
-      setIsUnsupported(false);
+      providerRef.current = null;
       localStorage.removeItem(LOCAL_STORAGE_KEYS.PREVIOUSLY_CONNECTED_PROVIDER_RDNS);
+    } else {
+      // Update address if changed
+      setWalletAddress(truncateAddress(accounts[0]));
     }
+  };
+
+  const handleDisconnect = () => {
+    setProvider(null);
+    setWalletAddress(null);
+    setCurrentChain(null);
+    providerRef.current = null;
+    localStorage.removeItem(LOCAL_STORAGE_KEYS.PREVIOUSLY_CONNECTED_PROVIDER_RDNS);
   };
 
   return (
@@ -97,6 +149,15 @@ const WalletConnect: React.FC<WalletConnectProps> = ({ setProvider, setCurrentCh
       ) : (
         <p className="text-gray-400">No wallets detected.</p>
       )}
+      {/* Disconnect Wallet Button */}
+    {providerRef.current && (
+      <button
+        onClick={handleDisconnect}
+        className="w-full p-3 text-left border rounded-lg bg-black hover:bg-red-500 transition text-white mt-4"
+      >
+        Disconnect Wallet
+      </button>
+    )}
     </div>
   );
 };

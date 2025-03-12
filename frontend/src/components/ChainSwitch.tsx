@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { switchChain, isSupportedChain, networkInfoMap } from "../config/index";
+import { useState, useEffect } from "react";
+import { switchChain, isSupportedChain, networkInfoMap, SupportedChainId } from "../config/index";
 
 interface ChainSwitcherProps {
   provider: any;
@@ -7,25 +7,18 @@ interface ChainSwitcherProps {
 }
 
 const ChainSwitch = ({ provider, currentChain }: ChainSwitcherProps) => {
-  const [selectedChain, setSelectedChain] = useState<number | null>(null);
   const [isUnsupported, setIsUnsupported] = useState(false);
 
+  // Update unsupported status when chain changes
   useEffect(() => {
-    if (currentChain !== selectedChain) {
-      setSelectedChain(currentChain);
-      setIsUnsupported(!isSupportedChain(currentChain ?? 0));
-    }
-  }, [currentChain, selectedChain]);
+    setIsUnsupported(!isSupportedChain(currentChain ?? 0));
+  }, [currentChain]);
 
   const handleChainChange = async (chainId: number) => {
+    if (!provider) return;
+    
     try {
       await switchChain(chainId, provider);
-      setSelectedChain(chainId);
-
-      await provider.request({
-        method: "wallet_addEthereumChain",
-        params: [networkInfoMap[chainId]],
-      });
     } catch (error) {
       console.error("Failed to switch network:", error);
     }
@@ -34,16 +27,25 @@ const ChainSwitch = ({ provider, currentChain }: ChainSwitcherProps) => {
   return (
     <div className="p-4">
       <h3 className="text-lg font-semibold mb-2">Select Network</h3>
+      {isUnsupported && (
+        <div className="bg-yellow-800 text-yellow-100 p-2 mb-2 rounded-lg text-sm">
+          Current network is not supported
+        </div>
+      )}
       <select
-        value={selectedChain || ""}
+        value={currentChain || ""}
         onChange={(e) => handleChainChange(Number(e.target.value))}
         className="p-2 border rounded-lg w-full bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+        disabled={!provider}
       >
-        {Object.keys(networkInfoMap).map((chain) => (
-          <option key={chain} value={chain}>
-            {isSupportedChain(Number(chain)) ? `Chain ${chain}` : `Unsupported Chain ${chain}`}
-          </option>
-        ))}
+        <option value="" disabled>Select a network</option>
+        {Object.values(SupportedChainId)
+          .filter((value) => typeof value === 'number')
+          .map((chainId) => (
+            <option key={chainId} value={chainId}>
+              {networkInfoMap[chainId as number]?.chainName || `Chain ${chainId}`}
+            </option>
+          ))}
       </select>
     </div>
   );

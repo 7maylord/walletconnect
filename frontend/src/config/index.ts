@@ -117,15 +117,20 @@ export function isSupportedChain(
  * @param chain The chain ID to switch to.
  * @param provider The EIP1193Provider instance.
  */
-export const switchChain = async (chain: number, provider: EIP1193Provider) => {
-    if (!isSupportedChain(chain))
-        return console.error("attempt to switch to a wrong chain!");
+export const switchChain = async (chain: number, provider: EIP1193Provider): Promise<boolean> => {
+    if (!isSupportedChain(chain)) {
+        console.error("attempt to switch to a unsupported chain!");
+        return false;
+    }
+        
     try {
         await provider.request({
             method: "wallet_switchEthereumChain",
             params: [{ chainId: `0x${chain.toString(16)}` }],
         });
+        return true;
     } catch (error: any) {
+        // If the chain hasn't been added to the wallet
         if (error.code === 4902 || error.code === -32603) {
             const chainInfo = networkInfoMap[chain];
             try {
@@ -137,5 +142,6 @@ export const switchChain = async (chain: number, provider: EIP1193Provider) => {
                 console.error("user rejected network addition!");
             }
         }
+        return false;
     }
 };
