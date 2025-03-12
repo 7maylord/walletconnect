@@ -31,7 +31,13 @@ export const LOCAL_STORAGE_KEYS = {
  * @title networkInfoMap
  * @dev Object containing network information for supported chains.
  */
-export const networkInfoMap = {
+export const networkInfoMap : Record<number, { 
+    chainId: string;
+    chainName: string;
+    rpcUrls: string[];
+    blockExplorerUrls: string[];
+    nativeCurrency: { name: string; symbol: string; decimals: number };
+  }> = {
     [SupportedChainId.SEPOLIA]: {
         chainId: `0x${SupportedChainId.SEPOLIA.toString(16)}`,
         chainName: "Sepolia test network",
