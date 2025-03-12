@@ -78,7 +78,7 @@ export const useEthereumProvider = () => {
       setSigner(signer);
       setWalletAddress(accounts[0]);
       
-      // Get chain ID directly using EIP-1193 method
+      // Get chain ID 
       const chainId = await window.ethereum.request({ method: "eth_chainId" });
       setCurrentChain(parseInt(chainId, 16));
       
@@ -198,7 +198,6 @@ export const useEthereumProvider = () => {
         from: walletAddress,
         to: recipient,
         value: "0x" + (Number(ethers.parseEther(amount))).toString(16),
-        // Optional: gas, gasPrice, etc.
       };
       
       const txHash = await window.ethereum.request({

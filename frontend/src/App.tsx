@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect,useState } from "react";
 import "./App.css";
 import WalletConnect from "./component/WalletConnect";
 import ChainSwitch from "./component/ChainSwitch";
@@ -20,6 +20,8 @@ const App = () => {
     setupProviderListeners,
     removeProviderListeners
   } = useEthereumProvider();
+
+  const [localError, setLocalError] = useState<string | null>(null);
   
   useEffect(() => {
     setupProviderListeners();
@@ -27,6 +29,18 @@ const App = () => {
       removeProviderListeners();
     };
   }, [setupProviderListeners, removeProviderListeners]);
+
+    // Effect to clear the error after 5 seconds
+    useEffect(() => {
+      if (error) {
+        setLocalError(error);
+        const timer = setTimeout(() => {
+          setLocalError(null);
+        }, 5000); 
+  
+        return () => clearTimeout(timer); 
+      }
+    }, [error]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
@@ -68,9 +82,9 @@ const App = () => {
           </main>
         </div>
         
-        {error && (
+        {localError && (
           <div className="mt-4 p-3 bg-red-900/50 border border-red-700 rounded-lg">
-            <p className="text-red-400 text-center">{error}</p>
+            <p className="text-red-400 text-center">{localError}</p>
           </div>
         )}
       </div>
